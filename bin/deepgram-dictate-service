@@ -1,0 +1,17 @@
+#!/usr/bin/env zsh
+# Starts dictation with the secrets from Nikola's zsh config.
+#
+# systemd user units get a minimal environment, so DEEPGRAM_API_KEY from
+# secrets.zsh is not visible. Source it here instead of duplicating the secret.
+set -eu
+
+secrets="${ZDOTDIR:-$HOME/.config/zsh}/config/secrets.zsh"
+
+# secrets.zsh is git-crypt encrypted; when locked it is ciphertext, not zsh.
+if [[ -r "$secrets" ]] && grep -q '^export ' "$secrets" 2>/dev/null; then
+  source "$secrets"
+else
+  print -u2 "warning: cannot read $secrets (git-crypt locked?), continuing without it"
+fi
+
+exec "$HOME/w/p/deepgram-dictate/.venv/bin/deepgram-dictate" "$@"
