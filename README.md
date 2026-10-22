@@ -72,8 +72,10 @@ If you prefer systemd to own the variable, replace the `ExecStart` with the
   network failure, and no speech detected. Start, stop, paste and cancel are
   sound-only feedback. Cancel uses the other theme's stop sound, so it is easy to
   tell apart.
-- Startup sends 1 second of silence to warm the TLS connection and check the
-  key. Delete `_warm_up` in `app.py` if you do not want that.
+- Each F7 press sends 0.5 seconds of silence in the background while you speak,
+  so the next real request reuses a live socket. Warm-ups are skipped when the
+  last API call was under 30 seconds ago. Delete `_warm_in_background` in
+  `app.py` if you do not want that.
 - The hotkey listens through XRecord, so F7 still reaches the focused app. F7 is
   not bound in most apps, so this is rarely a problem.
 - Sounds are copied from [Handy](https://github.com/cjpais/Handy) (MIT).

@@ -13,6 +13,10 @@ from .transcribe import transcribe
 
 log = logging.getLogger(__name__)
 
+# A kept-alive socket dies server-side after a minute or two of idle, so warm
+# again only when the previous request is older than this.
+WARM_INTERVAL = 30.0
+
 
 class Dictate:
     """F7 toggles recording. A fast second press cancels and discards the audio."""
@@ -23,18 +27,22 @@ class Dictate:
         self._lock = threading.Lock()
         self._recording = False
         self._started_at = 0.0
-        threading.Thread(target=self._warm_up, daemon=True).start()
+        self._last_api_use = 0.0
 
-    def _warm_up(self) -> None:
-        """Open the TLS connection and check the key before the first dictation."""
-        started = time.monotonic()
-        try:
-            transcribe(silent_wav(1.0, self.cfg.samplerate), self.cfg)
-        except Exception as exc:  # noqa: BLE001 - auth or network problem at startup
-            log.exception("warm-up failed")
-            notify("Deepgram not ready", str(exc)[:200], "critical")
+    def _warm_in_background(self) -> None:
+        """Pay the handshake while the user is still speaking."""
+        if time.monotonic() - self._last_api_use < WARM_INTERVAL:
             return
-        log.info("deepgram ready in %.2fs", time.monotonic() - started)
+        # Mark it now so a second fast press does not spawn a second warm-up.
+        self._last_api_use = time.monotonic()
+        threading.Thread(target=self._ping, daemon=True).start()
+
+    def _ping(self) -> None:
+        """Send a short silent clip so the next real request reuses the socket."""
+        try:
+            transcribe(silent_wav(0.5, self.cfg.samplerate), self.cfg)
+        except Exception as exc:  # noqa: BLE001 - the real request reports failures
+            log.debug("key-down warm-up failed: %s", exc)
 
     def toggle(self) -> None:
         with self._lock:
@@ -54,6 +62,7 @@ class Dictate:
         self._recording = True
         self._started_at = time.monotonic()
         sounds.play("start", self.cfg.sounds)
+        self._warm_in_background()
         log.info("recording")
 
     def _stop(self, elapsed: float) -> None:
@@ -71,6 +80,7 @@ class Dictate:
 
     def _transcribe(self, wav: bytes) -> None:
         started = time.monotonic()
+        self._last_api_use = started
         try:
             text = transcribe(wav, self.cfg)
         except Exception as exc:  # noqa: BLE001 - network/auth errors
